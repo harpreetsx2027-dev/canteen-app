@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canteen Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f0f4f8; padding: 20px; }
+    h1 { font-size: 22px; color: #1a1a2e; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: white; border-radius: 12px; padding: 18px; text-align: center; }
+    .stat-card .val { font-size: 26px; font-weight: 700; color: #4f46e5; }
+    .stat-card .lbl { font-size: 13px; color: #888; margin-top: 4px; }
+    .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    select, input { padding: 10px 14px; border: 1.5px solid #ddd; border-radius: 8px; font-size: 14px; background: white; }
+    button { padding: 10px 20px; background: #4f46e5; color: white; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; }
+    th { background: #4f46e5; color: white; padding: 12px 14px; text-align: left; font-size: 13px; font-weight: 600; }
+    td { padding: 11px 14px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+    tr:hover td { background: #f5f3ff; }
+    .pill { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .pill.breakfast { background: #fef3c7; color: #92400e; }
+    .pill.lunch     { background: #d1fae5; color: #065f46; }
+    .pill.dinner     { background: #ede9fe; color: #5b21b6; }
+    .bill-section { margin-top: 32px; background: white; border-radius: 12px; padding: 20px; }
+    .bill-section h2 { font-size: 17px; margin-bottom: 16px; color: #1a1a2e; }
+    .student-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+    .student-row:last-child { border-bottom: none; }
+    .amount { font-weight: 700; color: #4f46e5; }
+    #loading { text-align: center; padding: 40px; color: #888; }
+  </style>
+</head>
+<body>
+  <h1>🍽️ Canteen Dashboard</h1>
+  <p class="subtitle" id="todayDate"></p>
+
+  <div class="stats">
+    <div class="stat-card"><div class="val" id="todayCount">—</div><div class="lbl">Meals today</div></div>
+    <div class="stat-card"><div class="val" id="todayRevenue">—</div><div class="lbl">Revenue today</div></div>
+    <div class="stat-card"><div class="val" id="monthCount">—</div><div class="lbl">Meals this month</div></div>
+    <div class="stat-card"><div class="val" id="monthRevenue">—</div><div class="lbl">Revenue this month</div></div>
+  </div>
+
+  <div class="filters">
+    <input type="month" id="monthFilter" />
+    <input type="text" id="rollFilter" placeholder="Filter by roll no." />
+    <button onclick="loadData()">Apply Filter</button>
+    <button onclick="exportCSV()" style="background:#065f46">Export CSV</button>
+  </div>
+
+  <div id="loading">Loading data...</div>
+  <table id="dataTable" style="display:none">
+    <thead>
+      <tr><th>Date</th><th>Roll No.</th><th>Name</th><th>Meal</th><th>Amount</th><th>Time</th></tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+
+  <div class="bill-section">
+    <h2>Monthly Bill Summary</h2>
+    <div id="billSummary"><p style="color:#888;font-size:14px">Apply a month filter above to see bills.</p></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // ⚠️ REPLACE WITH YOUR FIREBASE CONFIG
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const today = new Date().toISOString().split('T')[0];
+    const thisMonth = today.substring(0, 7);
+    document.getElementById('todayDate').textContent = 'Today: ' + new Date().toLocaleDateString('en-IN', { dateStyle: 'full' });
+    document.getElementById('monthFilter').value = thisMonth;
+
+    let allData = [];
+
+    async function loadStats() {
+      const todayQ = query(collection(db, 'attendance'), where('date', '==', today));
+      const monthQ = query(collection(db, 'attendance'), where('month', '==', thisMonth));
+      const [tSnap, mSnap] = await Promise.all([getDocs(todayQ), getDocs(monthQ)]);
+      let tRev = 0, mRev = 0;
+      tSnap.forEach(d => tRev += d.data().amount);
+      mSnap.forEach(d => mRev += d.data().amount);
+      document.getElementById('todayCount').textContent = tSnap.size;
+      document.getElementById('todayRevenue').textContent = '₹' + tRev;
+      document.getElementById('monthCount').textContent = mSnap.size;
+      document.getElementById('monthRevenue').textContent = '₹' + mRev;
+    }
+
+    window.loadData = async function() {
+      const month = document.getElementById('monthFilter').value;
+      const roll = document.getElementById('rollFilter').value.trim().toUpperCase();
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('dataTable').style.display = 'none';
+
+      let q = query(collection(db, 'attendance'), where('month', '==', month || thisMonth));
+      const snap = await getDocs(q);
+      allData = [];
+      snap.forEach(d => allData.push({ id: d.id, ...d.data() }));
+      if (roll) allData = allData.filter(r => r.roll.includes(roll));
+      allData.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      allData.forEach(r => {
+        const time = r.timestamp ? new Date(r.timestamp.seconds * 1000).toLocaleTimeString('en-IN', { timeStyle: 'short' }) : '—';
+        tbody.innerHTML += `<tr>
+          <td>${r.date}</td><td>${r.roll}</td><td>${r.name}</td>
+          <td><span class="pill ${r.meal}">${r.meal}</span></td>
+          <td>₹${r.amount}</td><td>${time}</td>
+        </tr>`;
+      });
+
+      // Bill summary
+      const bills = {};
+      allData.forEach(r => {
+        if (!bills[r.roll]) bills[r.roll] = { name: r.name, total: 0, count: 0 };
+        bills[r.roll].total += r.amount;
+        bills[r.roll].count++;
+      });
+      const billDiv = document.getElementById('billSummary');
+      const sorted = Object.entries(bills).sort((a, b) => b[1].total - a[1].total);
+      billDiv.innerHTML = sorted.length === 0
+        ? '<p style="color:#888;font-size:14px">No data found.</p>'
+        : sorted.map(([roll, d]) =>
+            `<div class="student-row">
+              <div><strong>${d.name}</strong><br><span style="color:#888;font-size:12px">${roll} · ${d.count} meals</span></div>
+              <div class="amount">₹${d.total}</div>
+            </div>`).join('');
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('dataTable').style.display = allData.length ? 'table' : 'none';
+    };
+
+    window.exportCSV = function() {
+      if (!allData.length) { alert('Load data first.'); return; }
+      const rows = [['Date','Roll No','Name','Meal','Amount']];
+      allData.forEach(r => rows.push([r.date, r.roll, r.name, r.meal, r.amount]));
+      const csv = rows.map(r => r.join(',')).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `canteen_${document.getElementById('monthFilter').value}.csv`;
+      a.click();
+    };
+
+    loadStats();
+    loadData();
+  </script>
+</body>
+</html>
