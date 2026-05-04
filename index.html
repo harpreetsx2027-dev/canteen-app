@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canteen Check-In</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f0f4f8; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .card { background: white; border-radius: 16px; padding: 32px 24px; max-width: 400px; width: 100%; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    h1 { font-size: 22px; margin-bottom: 8px; color: #1a1a2e; }
+    p.sub { color: #666; font-size: 14px; margin-bottom: 24px; }
+    label { display: block; text-align: left; font-size: 14px; font-weight: 600; color: #333; margin-bottom: 6px; }
+    select, input { width: 100%; padding: 12px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 15px; margin-bottom: 16px; background: #fafafa; }
+    button { width: 100%; padding: 14px; background: #4f46e5; color: white; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #3730a3; }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    .msg { margin-top: 20px; padding: 14px; border-radius: 10px; font-size: 14px; display: none; }
+    .msg.success { background: #d1fae5; color: #065f46; display: block; }
+    .msg.error { background: #fee2e2; color: #991b1b; display: block; }
+    .time-badge { display: inline-block; background: #ede9fe; color: #5b21b6; border-radius: 20px; padding: 4px 14px; font-size: 13px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🍽️ Canteen Check-In</h1>
+    <p class="sub">Mark your meal attendance below</p>
+    <span class="time-badge" id="currentTime"></span>
+
+    <label for="rollInput">Roll Number / Student ID</label>
+    <input type="text" id="rollInput" placeholder="e.g. CS2024001" autocomplete="off" />
+
+    <label for="nameInput">Your Name</label>
+    <input type="text" id="nameInput" placeholder="e.g. Rahul Sharma" autocomplete="off" />
+
+    <label for="mealSelect">Meal Type</label>
+    <select id="mealSelect">
+      <option value="">-- Select meal --</option>
+      <option value="breakfast">Breakfast (₹100)</option>
+      <option value="lunch">Lunch (₹120)</option>
+      <option value="dinner">Dinner (₹150)</option>
+    </select>
+
+    <button id="checkInBtn" onclick="checkIn()">Mark Attendance</button>
+    <div class="msg" id="statusMsg"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // ⚠️ REPLACE THIS WITH YOUR FIREBASE CONFIG FROM STEP 4
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const prices = { breakfast: 100, lunch: 120, dinner: 150 };
+
+    function updateTime() {
+      const now = new Date();
+      document.getElementById('currentTime').textContent =
+        now.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    }
+    updateTime();
+    setInterval(updateTime, 30000);
+
+    window.checkIn = async function() {
+      const roll = document.getElementById('rollInput').value.trim().toUpperCase();
+      const name = document.getElementById('nameInput').value.trim();
+      const meal = document.getElementById('mealSelect').value;
+      const msg = document.getElementById('statusMsg');
+      const btn = document.getElementById('checkInBtn');
+
+      msg.className = 'msg';
+      msg.style.display = 'none';
+
+      if (!roll || !name || !meal) {
+        msg.textContent = 'Please fill in all fields.';
+        msg.className = 'msg error';
+        return;
+      }
+
+      // Prevent double entry: same student, same meal, same day
+      const today = new Date().toISOString().split('T')[0];
+      const q = query(collection(db, 'attendance'),
+        where('roll', '==', roll),
+        where('meal', '==', meal),
+        where('date', '==', today));
+      const existing = await getDocs(q);
+      if (!existing.empty) {
+        msg.textContent = `Already marked ${meal} for today!`;
+        msg.className = 'msg error';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      try {
+        await addDoc(collection(db, 'attendance'), {
+          roll, name, meal,
+          amount: prices[meal],
+          date: today,
+          timestamp: serverTimestamp(),
+          month: today.substring(0, 7)
+        });
+
+        msg.textContent = `✅ Checked in for ${meal}! ₹${prices[meal]} added to your account.`;
+        msg.className = 'msg success';
+        document.getElementById('rollInput').value = '';
+        document.getElementById('nameInput').value = '';
+        document.getElementById('mealSelect').value = '';
+      } catch (e) {
+        msg.textContent = 'Error saving. Please try again.';
+        msg.className = 'msg error';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Mark Attendance';
+    };
+  </script>
+</body>
+</html>
